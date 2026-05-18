@@ -13,6 +13,8 @@ private val userRepo = UserRepository()
 private val courseRepo = CourseRepository()
 private val lessonRepo = LessonRepository()
 private val progressRepo = ProgressRepository()
+private val achievementRepo = AchievementRepository()
+private val statsRepo = UserStatsRepository()
 
 fun Application.configureRouting() {
     routing {
@@ -22,15 +24,14 @@ fun Application.configureRouting() {
         }
 
         authenticate("firebase") {
+
             route("/api/v1/users") {
+
                 get("/me") {
                     val principal = call.principal<FirebasePrincipal>()!!
                     val user = userRepo.findById(principal.uid)
-                    if (user != null) {
-                        call.respond(user)
-                    } else {
-                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
-                    }
+                        ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                    call.respond(user)
                 }
 
                 post("/me") {
@@ -40,11 +41,25 @@ fun Application.configureRouting() {
                     userRepo.upsert(user)
                     call.respond(HttpStatusCode.OK, user)
                 }
+
+                get("/me/stats") {
+                    val principal = call.principal<FirebasePrincipal>()!!
+                    val stats = statsRepo.getStats(principal.uid)
+                    call.respond(stats)
+                }
             }
 
             route("/api/v1/courses") {
+
                 get {
-                    val courses = courseRepo.getAll(publishedOnly = true)
+                    val search = call.request.queryParameters["search"]
+                    val category = call.request.queryParameters["category"]
+
+                    val courses = when {
+                        !search.isNullOrBlank() -> courseRepo.search(search)
+                        !category.isNullOrBlank() && category != "Все" -> courseRepo.getByCategory(category)
+                        else -> courseRepo.getAll(publishedOnly = true)
+                    }
                     call.respond(courses)
                 }
 
@@ -60,8 +75,7 @@ fun Application.configureRouting() {
                     val principal = call.principal<FirebasePrincipal>()!!
                     val body = call.receive<Course>()
                     val course = body.copy(authorId = principal.uid)
-                    val created = courseRepo.create(course)
-                    call.respond(HttpStatusCode.Created, created)
+                    call.respond(HttpStatusCode.Created, courseRepo.create(course))
                 }
 
                 put("/{id}") {
@@ -83,11 +97,11 @@ fun Application.configureRouting() {
             }
 
             route("/api/v1/courses/{courseId}/lessons") {
+
                 get {
                     val courseId = call.parameters["courseId"]
                         ?: throw IllegalArgumentException("Missing courseId")
-                    val lessons = lessonRepo.getByCourseId(courseId)
-                    call.respond(lessons)
+                    call.respond(lessonRepo.getByCourseId(courseId))
                 }
 
                 get("/{lessonId}") {
@@ -102,9 +116,7 @@ fun Application.configureRouting() {
                     val courseId = call.parameters["courseId"]
                         ?: throw IllegalArgumentException("Missing courseId")
                     val body = call.receive<Lesson>()
-                    val lesson = body.copy(courseId = courseId)
-                    val created = lessonRepo.create(lesson)
-                    call.respond(HttpStatusCode.Created, created)
+                    call.respond(HttpStatusCode.Created, lessonRepo.create(body.copy(courseId = courseId)))
                 }
 
                 put("/{lessonId}") {
@@ -118,32 +130,35 @@ fun Application.configureRouting() {
             }
 
             route("/api/v1/progress") {
+
                 get("/{courseId}") {
                     val principal = call.principal<FirebasePrincipal>()!!
                     val courseId = call.parameters["courseId"]
                         ?: throw IllegalArgumentException("Missing courseId")
-                    val progress = progressRepo.getForUserAndCourse(principal.uid, courseId)
-                    call.respond(progress)
+                    call.respond(progressRepo.getForUserAndCourse(principal.uid, courseId))
                 }
 
                 get("/{courseId}/summary") {
                     val principal = call.principal<FirebasePrincipal>()!!
                     val courseId = call.parameters["courseId"]
                         ?: throw IllegalArgumentException("Missing courseId")
-
                     val course = courseRepo.getById(courseId)
                         ?: throw NoSuchElementException("Course $courseId not found")
                     val allProgress = progressRepo.getForUserAndCourse(principal.uid, courseId)
+                    val lessons = lessonRepo.getByCourseId(courseId)
                     val completed = allProgress.count { it.completed }
                     val total = course.lessons.size
-
-                    val summary = CourseProgress(
-                        courseId = courseId,
-                        totalLessons = total,
-                        completedLessons = completed,
-                        progressPercent = if (total == 0) 0f else completed.toFloat() / total,
+                    val totalMinutes = lessons.sumOf { it.durationMinutes }
+                    call.respond(
+                        CourseProgress(
+                            courseId = courseId,
+                            totalLessons = total,
+                            completedLessons = completed,
+                            remainingLessons = (total - completed).coerceAtLeast(0),
+                            totalMinutes = totalMinutes,
+                            progressPercent = if (total == 0) 0f else completed.toFloat() / total,
+                        )
                     )
-                    call.respond(summary)
                 }
 
                 post {
@@ -158,10 +173,24 @@ fun Application.configureRouting() {
                     val principal = call.principal<FirebasePrincipal>()!!
                     val lessonId = call.parameters["lessonId"]
                         ?: throw IllegalArgumentException("Missing lessonId")
+
                     progressRepo.markCompleted(principal.uid, lessonId)
+                    userRepo.addXp(principal.uid, 10)
+
+                    val totalCompleted = progressRepo.countCompletedForUser(principal.uid)
+                    if (totalCompleted >= 1) achievementRepo.unlock(principal.uid, "first_lesson")
+
+                    val activeCourses = progressRepo.getAllForUser(principal.uid)
+                        .map { it.courseId }.distinct().size
+                    if (activeCourses >= 4) achievementRepo.unlock(principal.uid, "four_courses")
+
+                    val user = userRepo.findById(principal.uid)
+                    if ((user?.level ?: 0) >= 10) achievementRepo.unlock(principal.uid, "level_10")
+
                     call.respond(HttpStatusCode.OK, mapOf("completed" to true))
                 }
             }
         }
     }
 }
+

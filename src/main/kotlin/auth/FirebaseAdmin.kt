@@ -15,7 +15,6 @@ object FirebaseAdmin {
         val stream = if (serviceAccountPath.startsWith("/")) {
             FileInputStream(serviceAccountPath)
         } else {
-            // Relative path — resolve from working dir
             FileInputStream(serviceAccountPath)
         }
 
@@ -26,7 +25,6 @@ object FirebaseAdmin {
         FirebaseApp.initializeApp(options)
     }
 
-    /** Throws FirebaseAuthException if the token is invalid or expired */
     fun verifyIdToken(idToken: String): FirebaseToken =
         FirebaseAuth.getInstance().verifyIdToken(idToken)
 }

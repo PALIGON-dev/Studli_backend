@@ -1,10 +1,10 @@
 package com.learnapp.data.DAO
 
+import com.learnapp.domain.model.Achievement
 import com.learnapp.domain.model.Course
 import com.learnapp.domain.model.Lesson
 import com.learnapp.domain.model.LessonProgress
 import com.learnapp.domain.model.User
-import com.mongodb.MongoClientSettings
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import com.mongodb.kotlin.client.coroutine.MongoDatabase
@@ -19,7 +19,7 @@ object Database {
     fun init(uri: String, dbName: String) {
         val codecRegistry = CodecRegistries.fromRegistries(
             CodecRegistries.fromProviders(KotlinSerializerCodecProvider()),
-            MongoClientSettings.getDefaultCodecRegistry(),
+            com.mongodb.MongoClientSettings.getDefaultCodecRegistry(),
         )
 
         client = MongoClient.create(uri)
@@ -37,4 +37,7 @@ object Database {
 
     val progress: MongoCollection<LessonProgress>
         get() = db.getCollection("lesson_progress")
+
+    val achievements: MongoCollection<Achievement>
+        get() = db.getCollection("achievements")
 }
