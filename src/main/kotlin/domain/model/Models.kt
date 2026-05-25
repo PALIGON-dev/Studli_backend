@@ -1,12 +1,12 @@
 package com.learnapp.domain.model
 
 import kotlinx.serialization.Serializable
-import org.bson.codecs.pojo.annotations.BsonId
+import kotlinx.serialization.SerialName
 import org.bson.types.ObjectId
 
 @Serializable
 data class Course(
-    @BsonId
+    @SerialName("_id")
     val id: String = ObjectId().toHexString(),
     val title: String,
     val description: String,
@@ -23,7 +23,7 @@ enum class LessonType { VIDEO, TEXT, QUIZ }
 
 @Serializable
 data class Lesson(
-    @BsonId
+    @SerialName("_id")
     val id: String = ObjectId().toHexString(),
     val courseId: String,
     val title: String,
@@ -39,7 +39,7 @@ data class Lesson(
 
 @Serializable
 data class User(
-    @BsonId
+    @SerialName("_id")
     val uid: String,
     val displayName: String,
     val email: String,
@@ -51,7 +51,7 @@ data class User(
 
 @Serializable
 data class Achievement(
-    @BsonId
+    @SerialName("_id")
     val id: String = ObjectId().toHexString(),
     val key: String,
     val title: String,
@@ -74,7 +74,7 @@ data class UserStats(
 
 @Serializable
 data class LessonProgress(
-    @BsonId
+    @SerialName("_id")
     val id: String = ObjectId().toHexString(),
     val userId: String,
     val courseId: String,

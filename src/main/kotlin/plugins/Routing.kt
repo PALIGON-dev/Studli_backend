@@ -23,6 +23,50 @@ fun Application.configureRouting() {
             call.respond(mapOf("status" to "ok", "version" to "0.0.1"))
         }
 
+        get("/api/v1/seed") {
+            val courses = listOf(
+                Course(title = "Kotlin для начинающих", description = "Основы языка Kotlin и создание первых приложений.", category = "Программирование", authorId = "admin", isPublished = true),
+                Course(title = "Android Jetpack Compose", description = "Современная разработка UI на Android.", category = "Android", authorId = "admin", isPublished = true),
+                Course(title = "Ktor: Backend на Kotlin", description = "Создание высокопроизводительных серверов.", category = "Backend", authorId = "admin", isPublished = true)
+            )
+
+            courses.forEach { course ->
+                val created = courseRepo.create(course)
+                val lessons = listOf(
+                    Lesson(courseId = created.id, title = "Введение", order = 1, type = LessonType.TEXT, durationMinutes = 10, markdownContent = "# Добро пожаловать!\nЭто вводный урок."),
+                    Lesson(courseId = created.id, title = "Основные понятия", order = 2, type = LessonType.VIDEO, durationMinutes = 15, videoUrl = "https://example.com/video1"),
+                    Lesson(courseId = created.id, title = "Практика", order = 3, type = LessonType.QUIZ, durationMinutes = 20, quizId = "quiz_1")
+                )
+                lessons.forEach { lessonRepo.create(it) }
+                
+                // Update course with lesson IDs
+                courseRepo.update(created.copy(lessons = lessons.map { it.id }))
+            }
+            call.respond(HttpStatusCode.Created, mapOf("message" to "Database seeded successfully"))
+        }
+
+        route("/api/v1/courses") {
+            get {
+                val search = call.request.queryParameters["search"]
+                val category = call.request.queryParameters["category"]
+
+                val courses = when {
+                    !search.isNullOrBlank() -> courseRepo.search(search)
+                    !category.isNullOrBlank() && category != "Все" -> courseRepo.getByCategory(category)
+                    else -> courseRepo.getAll(publishedOnly = true)
+                }
+                call.respond(courses)
+            }
+
+            get("/{id}") {
+                val id = call.parameters["id"]
+                    ?: throw IllegalArgumentException("Missing course id")
+                val course = courseRepo.getById(id)
+                    ?: throw NoSuchElementException("Course $id not found")
+                call.respond(course)
+            }
+        }
+
         authenticate("firebase") {
 
             route("/api/v1/users") {
@@ -50,26 +94,6 @@ fun Application.configureRouting() {
             }
 
             route("/api/v1/courses") {
-
-                get {
-                    val search = call.request.queryParameters["search"]
-                    val category = call.request.queryParameters["category"]
-
-                    val courses = when {
-                        !search.isNullOrBlank() -> courseRepo.search(search)
-                        !category.isNullOrBlank() && category != "Все" -> courseRepo.getByCategory(category)
-                        else -> courseRepo.getAll(publishedOnly = true)
-                    }
-                    call.respond(courses)
-                }
-
-                get("/{id}") {
-                    val id = call.parameters["id"]
-                        ?: throw IllegalArgumentException("Missing course id")
-                    val course = courseRepo.getById(id)
-                        ?: throw NoSuchElementException("Course $id not found")
-                    call.respond(course)
-                }
 
                 post {
                     val principal = call.principal<FirebasePrincipal>()!!
