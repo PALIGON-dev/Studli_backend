@@ -26,7 +26,8 @@ class UserRepository {
         val user = findById(uid) ?: return
         var newXp = user.xp + xp
         var newLevel = user.level
-        while (newXp >= xpForLevel(newLevel)) {
+        // Исправлено: добавлена проверка, чтобы избежать бесконечного цикла
+        while (newXp >= xpForLevel(newLevel) && xpForLevel(newLevel) > 0) {
             newXp -= xpForLevel(newLevel)
             newLevel++
         }
@@ -66,7 +67,7 @@ class CourseRepository {
     }
 
     suspend fun update(course: Course): Boolean =
-        col.replaceOne(Filters.eq("_id", course.id), course).modifiedCount > 0
+        col.replaceOne(Filters.eq("_id", course.id), course).matchedCount > 0
 
     suspend fun delete(id: String): Boolean =
         col.deleteOne(Filters.eq("_id", id)).deletedCount > 0
@@ -89,7 +90,7 @@ class LessonRepository {
     }
 
     suspend fun update(lesson: Lesson): Boolean =
-        col.replaceOne(Filters.eq("_id", lesson.id), lesson).modifiedCount > 0
+        col.replaceOne(Filters.eq("_id", lesson.id), lesson).matchedCount > 0
 
     suspend fun delete(id: String): Boolean =
         col.deleteOne(Filters.eq("_id", id)).deletedCount > 0
@@ -118,16 +119,31 @@ class ProgressRepository {
         col.find(Filters.eq("userId", userId)).toList()
 
     suspend fun upsert(progress: LessonProgress) {
-        col.replaceOne(Filters.eq("_id", progress.id), progress, upsertOptions)
+        // Попытка найти существующий прогресс по userId и lessonId, если id новый
+        val existing = getForUserAndLesson(progress.userId, progress.lessonId)
+        val idToUse = existing?.id ?: progress.id
+        col.replaceOne(Filters.eq("_id", idToUse), progress.copy(id = idToUse), upsertOptions)
     }
 
-    suspend fun markCompleted(userId: String, lessonId: String) {
-        val existing = getForUserAndLesson(userId, lessonId) ?: return
-        col.replaceOne(
+    suspend fun deleteForUserAndCourse(userId: String, courseId: String) {
+        col.deleteMany(
+            Filters.and(
+                Filters.eq("userId", userId),
+                Filters.eq("courseId", courseId)
+            )
+        )
+    }
+
+    suspend fun markCompleted(userId: String, lessonId: String): Boolean {
+        val existing = getForUserAndLesson(userId, lessonId) ?: return false
+        if (existing.completed) return false // Уже завершено
+        
+        val result = col.replaceOne(
             Filters.eq("_id", existing.id),
             existing.copy(completed = true, completedAt = System.currentTimeMillis()),
             upsertOptions,
         )
+        return result.matchedCount > 0 || result.upsertedId != null
     }
 
     suspend fun countCompletedForUser(userId: String): Int =
@@ -145,20 +161,23 @@ class AchievementRepository {
         }
     }
 
-    suspend fun unlock(userId: String, key: String) {
+    suspend fun unlock(userId: String, key: String): Boolean {
         val existing = col.find(
             Filters.and(Filters.eq("userId", userId), Filters.eq("key", key))
         ).firstOrNull()
         if (existing == null) {
-            val template = ALL_ACHIEVEMENTS.find { it.key == key } ?: return
+            val template = ALL_ACHIEVEMENTS.find { it.key == key } ?: return false
             col.insertOne(
                 template.copy(
                     id = org.bson.types.ObjectId().toHexString(),
                     isUnlocked = true,
                     unlockedAt = System.currentTimeMillis(),
+                    userId = userId // Убедимся, что userId установлен
                 )
             )
+            return true
         }
+        return false
     }
 
     companion object {
@@ -206,3 +225,4 @@ class UserStatsRepository(
         )
     }
 }
+

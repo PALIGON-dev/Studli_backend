@@ -53,6 +53,7 @@ data class User(
 data class Achievement(
     @SerialName("_id")
     val id: String = ObjectId().toHexString(),
+    val userId: String = "", // Добавлено поле userId
     val key: String,
     val title: String,
     val description: String,

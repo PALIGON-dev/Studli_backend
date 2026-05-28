@@ -12,11 +12,7 @@ object FirebaseAdmin {
     fun init(serviceAccountPath: String) {
         if (FirebaseApp.getApps().isNotEmpty()) return
 
-        val stream = if (serviceAccountPath.startsWith("/")) {
-            FileInputStream(serviceAccountPath)
-        } else {
-            FileInputStream(serviceAccountPath)
-        }
+        val stream = FileInputStream(serviceAccountPath)
 
         val options = FirebaseOptions.builder()
             .setCredentials(GoogleCredentials.fromStream(stream))

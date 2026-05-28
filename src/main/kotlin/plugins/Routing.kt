@@ -95,6 +95,42 @@ fun Application.configureRouting() {
 
             route("/api/v1/courses") {
 
+                get("/my") {
+                    val principal = call.principal<FirebasePrincipal>()!!
+                    val enrolledCourseIds = progressRepo.getAllForUser(principal.uid)
+                        .map { it.courseId }
+                        .distinct()
+                    val courses = courseRepo.getAll(publishedOnly = true)
+                        .filter { it.id in enrolledCourseIds }
+                    call.respond(courses)
+                }
+
+                post("/{id}/unenroll") {
+val p = call.principal<FirebasePrincipal>()!!
+val i = call.parameters["id"]!!
+progressRepo.deleteForUserAndCourse(p.uid, i)
+call.respond(HttpStatusCode.OK, mapOf("status" to "unenrolled"))
+}
+post("/{id}/enroll") {
+                    val principal = call.principal<FirebasePrincipal>()!!
+                    val id = call.parameters["id"]
+                        ?: throw IllegalArgumentException("Missing course id")
+                    val course = courseRepo.getById(id)
+                        ?: throw NoSuchElementException("Course $id not found")
+                    val firstLessonId = course.lessons.firstOrNull()
+                    if (firstLessonId != null) {
+                        progressRepo.upsert(
+                            LessonProgress(
+                                userId = principal.uid,
+                                courseId = id,
+                                lessonId = firstLessonId,
+                                completed = false
+                            )
+                        )
+                    }
+                    call.respond(HttpStatusCode.OK, mapOf("status" to "enrolled", "courseId" to id))
+                }
+
                 post {
                     val principal = call.principal<FirebasePrincipal>()!!
                     val body = call.receive<Course>()
@@ -198,23 +234,30 @@ fun Application.configureRouting() {
                     val lessonId = call.parameters["lessonId"]
                         ?: throw IllegalArgumentException("Missing lessonId")
 
-                    progressRepo.markCompleted(principal.uid, lessonId)
-                    userRepo.addXp(principal.uid, 10)
+                    // Исправлено: добавляем XP и проверяем достижения только если урок завершен впервые
+                    if (progressRepo.markCompleted(principal.uid, lessonId)) {
+                        userRepo.addXp(principal.uid, 10)
 
-                    val totalCompleted = progressRepo.countCompletedForUser(principal.uid)
-                    if (totalCompleted >= 1) achievementRepo.unlock(principal.uid, "first_lesson")
+                        val totalCompleted = progressRepo.countCompletedForUser(principal.uid)
+                        if (totalCompleted >= 1) achievementRepo.unlock(principal.uid, "first_lesson")
 
-                    val activeCourses = progressRepo.getAllForUser(principal.uid)
-                        .map { it.courseId }.distinct().size
-                    if (activeCourses >= 4) achievementRepo.unlock(principal.uid, "four_courses")
+                        val activeCourses = progressRepo.getAllForUser(principal.uid)
+                            .map { it.courseId }.distinct().size
+                        if (activeCourses >= 4) achievementRepo.unlock(principal.uid, "four_courses")
 
-                    val user = userRepo.findById(principal.uid)
-                    if ((user?.level ?: 0) >= 10) achievementRepo.unlock(principal.uid, "level_10")
-
-                    call.respond(HttpStatusCode.OK, mapOf("completed" to true))
+                        val user = userRepo.findById(principal.uid)
+                        if ((user?.level ?: 0) >= 10) achievementRepo.unlock(principal.uid, "level_10")
+                        
+                        call.respond(HttpStatusCode.OK, mapOf("completed" to true, "new_xp" to true))
+                    } else {
+                        call.respond(HttpStatusCode.OK, mapOf("completed" to true, "new_xp" to false))
+                    }
                 }
             }
         }
     }
 }
+
+
+
 
