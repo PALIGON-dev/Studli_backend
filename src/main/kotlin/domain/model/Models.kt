@@ -50,10 +50,16 @@ data class User(
 )
 
 @Serializable
+data class CreateUserRequest(
+    val displayName: String,
+    val email: String,
+)
+
+@Serializable
 data class Achievement(
     @SerialName("_id")
     val id: String = ObjectId().toHexString(),
-    val userId: String = "", // Добавлено поле userId
+    val userId: String = "",
     val key: String,
     val title: String,
     val description: String,

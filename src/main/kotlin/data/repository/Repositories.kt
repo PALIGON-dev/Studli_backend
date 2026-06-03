@@ -26,8 +26,7 @@ class UserRepository {
         val user = findById(uid) ?: return
         var newXp = user.xp + xp
         var newLevel = user.level
-        // Исправлено: добавлена проверка, чтобы избежать бесконечного цикла
-        while (newXp >= xpForLevel(newLevel) && xpForLevel(newLevel) > 0) {
+        while (xpForLevel(newLevel) in 1..newXp) {
             newXp -= xpForLevel(newLevel)
             newLevel++
         }
@@ -119,7 +118,6 @@ class ProgressRepository {
         col.find(Filters.eq("userId", userId)).toList()
 
     suspend fun upsert(progress: LessonProgress) {
-        // Попытка найти существующий прогресс по userId и lessonId, если id новый
         val existing = getForUserAndLesson(progress.userId, progress.lessonId)
         val idToUse = existing?.id ?: progress.id
         col.replaceOne(Filters.eq("_id", idToUse), progress.copy(id = idToUse), upsertOptions)
@@ -134,20 +132,32 @@ class ProgressRepository {
         )
     }
 
-    suspend fun markCompleted(userId: String, lessonId: String): Boolean {
-        val existing = getForUserAndLesson(userId, lessonId) ?: return false
-        if (existing.completed) return false // Уже завершено
+    suspend fun markCompleted(userId: String, lessonId: String, courseId: String? = null): Boolean {
+        val existing = getForUserAndLesson(userId, lessonId)
         
-        val result = col.replaceOne(
-            Filters.eq("_id", existing.id),
-            existing.copy(completed = true, completedAt = System.currentTimeMillis()),
-            upsertOptions,
-        )
-        return result.matchedCount > 0 || result.upsertedId != null
+        if (existing?.completed == true) return false
+        
+        val progressToSave = existing?.copy(
+            completed = true, 
+            completedAt = System.currentTimeMillis()
+        ) ?: if (courseId != null) {
+            LessonProgress(
+                userId = userId,
+                courseId = courseId,
+                lessonId = lessonId,
+                completed = true,
+                completedAt = System.currentTimeMillis()
+            )
+        } else {
+            return false
+        }
+        
+        upsert(progressToSave)
+        return true
     }
 
     suspend fun countCompletedForUser(userId: String): Int =
-        getAllForUser(userId).count { it.completed }
+        getAllForUser(userId).filter { it.completed }.map { it.lessonId }.distinct().size
 }
 
 class AchievementRepository {
@@ -172,7 +182,7 @@ class AchievementRepository {
                     id = org.bson.types.ObjectId().toHexString(),
                     isUnlocked = true,
                     unlockedAt = System.currentTimeMillis(),
-                    userId = userId // Убедимся, что userId установлен
+                    userId = userId
                 )
             )
             return true
@@ -198,25 +208,25 @@ class UserStatsRepository(
     private val achievementRepo: AchievementRepository = AchievementRepository(),
 ) {
     suspend fun getStats(userId: String): UserStats {
-        val user = userRepo.findById(userId) ?: error("User not found")
+        val user = userRepo.findById(userId)
         val allProgress = progressRepo.getAllForUser(userId)
-        val completedLessons = allProgress.count { it.completed }
+        val completedLessons = allProgress.filter { it.completed }.map { it.lessonId }.distinct().size
 
         val activeCourseIds = allProgress.map { it.courseId }.distinct()
         val activeCourses = activeCourseIds.size
 
         val remainingLessons = activeCourseIds.sumOf { courseId ->
             val course = courseRepo.getById(courseId) ?: return@sumOf 0
-            val done = allProgress.count { it.courseId == courseId && it.completed }
+            val done = allProgress.filter { it.courseId == courseId && it.completed }.map { it.lessonId }.distinct().size
             (course.lessons.size - done).coerceAtLeast(0)
         }
 
         val achievements = achievementRepo.getForUser(userId)
-        val xpForNext = xpForLevel(user.level) - user.xp
+        val xpForNext = xpForLevel(user?.level ?: 1) - (user?.xp ?: 0)
 
         return UserStats(
-            level = user.level,
-            xp = user.xp,
+            level = user?.level ?: 1,
+            xp = user?.xp ?: 0,
             xpForNextLevel = xpForNext,
             activeCourses = activeCourses,
             remainingLessons = remainingLessons,

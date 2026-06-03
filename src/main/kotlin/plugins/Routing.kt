@@ -8,6 +8,8 @@ import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.http.content.*
+import java.io.File
 
 private val userRepo = UserRepository()
 private val courseRepo = CourseRepository()
@@ -18,6 +20,12 @@ private val statsRepo = UserStatsRepository()
 
 fun Application.configureRouting() {
     routing {
+
+        val uploadsDir = File("uploads")
+        if (!uploadsDir.exists()) {
+            uploadsDir.mkdirs()
+        }
+        staticFiles("/uploads", uploadsDir)
 
         get("/health") {
             call.respond(mapOf("status" to "ok", "version" to "0.0.1"))
@@ -34,15 +42,14 @@ fun Application.configureRouting() {
                 val created = courseRepo.create(course)
                 val lessons = listOf(
                     Lesson(courseId = created.id, title = "Введение", order = 1, type = LessonType.TEXT, durationMinutes = 10, markdownContent = "# Добро пожаловать!\nЭто вводный урок."),
-                    Lesson(courseId = created.id, title = "Основные понятия", order = 2, type = LessonType.VIDEO, durationMinutes = 15, videoUrl = "https://example.com/video1"),
+                    Lesson(courseId = created.id, title = "Основные понятия", order = 2, type = LessonType.VIDEO, durationMinutes = 15, videoUrl = "http://192.168.1.13:8080/uploads/sample.mp4"),
                     Lesson(courseId = created.id, title = "Практика", order = 3, type = LessonType.QUIZ, durationMinutes = 20, quizId = "quiz_1")
                 )
                 lessons.forEach { lessonRepo.create(it) }
                 
-                // Update course with lesson IDs
                 courseRepo.update(created.copy(lessons = lessons.map { it.id }))
             }
-            call.respond(HttpStatusCode.Created, mapOf("message" to "Database seeded successfully"))
+            call.respond(HttpStatusCode.Created, mapOf("message" to "Database seeded successfully. Make sure to put a 'sample.mp4' file in the 'uploads' folder!"))
         }
 
         route("/api/v1/courses") {
@@ -67,6 +74,11 @@ fun Application.configureRouting() {
             }
         }
 
+        get("/test-stats") {
+            val stats = statsRepo.getStats("eaApf9vV0gSd01h91l6rDjuMuqU2")
+            call.respond(stats)
+        }
+
         authenticate("firebase") {
 
             route("/api/v1/users") {
@@ -80,8 +92,18 @@ fun Application.configureRouting() {
 
                 post("/me") {
                     val principal = call.principal<FirebasePrincipal>()!!
-                    val body = call.receive<User>()
-                    val user = body.copy(uid = principal.uid, email = principal.email ?: body.email)
+                    val body = call.receive<CreateUserRequest>()
+                    val existingUser = userRepo.findById(principal.uid)
+                    
+                    val user = existingUser?.copy(
+                        displayName = body.displayName,
+                        email = body.email
+                    ) ?: User(
+                        uid = principal.uid,
+                        displayName = body.displayName,
+                        email = body.email
+                    )
+                    
                     userRepo.upsert(user)
                     call.respond(HttpStatusCode.OK, user)
                 }
@@ -112,24 +134,24 @@ progressRepo.deleteForUserAndCourse(p.uid, i)
 call.respond(HttpStatusCode.OK, mapOf("status" to "unenrolled"))
 }
 post("/{id}/enroll") {
-                    val principal = call.principal<FirebasePrincipal>()!!
-                    val id = call.parameters["id"]
-                        ?: throw IllegalArgumentException("Missing course id")
-                    val course = courseRepo.getById(id)
-                        ?: throw NoSuchElementException("Course $id not found")
-                    val firstLessonId = course.lessons.firstOrNull()
-                    if (firstLessonId != null) {
-                        progressRepo.upsert(
-                            LessonProgress(
-                                userId = principal.uid,
-                                courseId = id,
-                                lessonId = firstLessonId,
-                                completed = false
-                            )
-                        )
-                    }
-                    call.respond(HttpStatusCode.OK, mapOf("status" to "enrolled", "courseId" to id))
-                }
+    val principal = call.principal<FirebasePrincipal>()!!
+    val id = call.parameters["id"]
+        ?: throw IllegalArgumentException("Missing course id")
+    val course = courseRepo.getById(id)
+        ?: throw NoSuchElementException("Course $id not found")
+
+    course.lessons.forEach { lessonId ->
+        progressRepo.upsert(
+            LessonProgress(
+                userId = principal.uid,
+                courseId = id,
+                lessonId = lessonId,
+                completed = false
+            )
+        )
+    }
+    call.respond(HttpStatusCode.OK, mapOf("status" to "enrolled", "courseId" to id))
+}
 
                 post {
                     val principal = call.principal<FirebasePrincipal>()!!
@@ -206,7 +228,7 @@ post("/{id}/enroll") {
                         ?: throw NoSuchElementException("Course $courseId not found")
                     val allProgress = progressRepo.getForUserAndCourse(principal.uid, courseId)
                     val lessons = lessonRepo.getByCourseId(courseId)
-                    val completed = allProgress.count { it.completed }
+                    val completed = allProgress.filter { it.completed }.map { it.lessonId }.distinct().size
                     val total = course.lessons.size
                     val totalMinutes = lessons.sumOf { it.durationMinutes }
                     call.respond(
@@ -234,8 +256,10 @@ post("/{id}/enroll") {
                     val lessonId = call.parameters["lessonId"]
                         ?: throw IllegalArgumentException("Missing lessonId")
 
-                    // Исправлено: добавляем XP и проверяем достижения только если урок завершен впервые
-                    if (progressRepo.markCompleted(principal.uid, lessonId)) {
+                    val lesson = lessonRepo.getById(lessonId)
+                    val courseId = lesson?.courseId
+
+                    if (progressRepo.markCompleted(principal.uid, lessonId, courseId)) {
                         userRepo.addXp(principal.uid, 10)
 
                         val totalCompleted = progressRepo.countCompletedForUser(principal.uid)
@@ -248,6 +272,17 @@ post("/{id}/enroll") {
                         val user = userRepo.findById(principal.uid)
                         if ((user?.level ?: 0) >= 10) achievementRepo.unlock(principal.uid, "level_10")
                         
+                        if (courseId != null) {
+                            val course = courseRepo.getById(courseId)
+                            if (course != null) {
+                                val allProgress = progressRepo.getForUserAndCourse(principal.uid, courseId)
+                                val completedInCourse = allProgress.filter { it.completed }.map { it.lessonId }.distinct().size
+                                if (completedInCourse >= course.lessons.size && course.lessons.isNotEmpty()) {
+                                    achievementRepo.unlock(principal.uid, "course_done")
+                                }
+                            }
+                        }
+
                         call.respond(HttpStatusCode.OK, mapOf("completed" to true, "new_xp" to true))
                     } else {
                         call.respond(HttpStatusCode.OK, mapOf("completed" to true, "new_xp" to false))
