@@ -70,6 +70,10 @@ class CourseRepository {
 
     suspend fun delete(id: String): Boolean =
         col.deleteOne(Filters.eq("_id", id)).deletedCount > 0
+
+    suspend fun clear() {
+        col.deleteMany(Filters.empty())
+    }
 }
 
 class LessonRepository {
@@ -93,6 +97,10 @@ class LessonRepository {
 
     suspend fun delete(id: String): Boolean =
         col.deleteOne(Filters.eq("_id", id)).deletedCount > 0
+
+    suspend fun clear() {
+        col.deleteMany(Filters.empty())
+    }
 }
 
 class ProgressRepository {

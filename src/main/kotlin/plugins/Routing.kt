@@ -32,24 +32,234 @@ fun Application.configureRouting() {
         }
 
         get("/api/v1/seed") {
-            val courses = listOf(
-                Course(title = "Kotlin для начинающих", description = "Основы языка Kotlin и создание первых приложений.", category = "Программирование", authorId = "admin", isPublished = true),
-                Course(title = "Android Jetpack Compose", description = "Современная разработка UI на Android.", category = "Android", authorId = "admin", isPublished = true),
-                Course(title = "Ktor: Backend на Kotlin", description = "Создание высокопроизводительных серверов.", category = "Backend", authorId = "admin", isPublished = true)
+            courseRepo.clear()
+            lessonRepo.clear()
+
+            val mainCourses = listOf(
+                Course(
+                    title = "Веб-разработка для начинающих",
+                    description = "Погрузитесь в мир веб-технологий. Вы изучите HTML, CSS и основы JavaScript, чтобы создавать свои первые сайты.",
+                    category = "Programming",
+                    authorId = "admin",
+                    isPublished = true
+                ),
+                Course(
+                    title = "Android Jetpack Compose",
+                    description = "Современный подход к созданию пользовательских интерфейсов на Android. Изучите декларативный стиль разработки.",
+                    category = "Android",
+                    authorId = "admin",
+                    isPublished = true
+                ),
+                Course(
+                    title = "Основы Python",
+                    description = "Идеальный курс для старта в программировании. Простой синтаксис и огромные возможности.",
+                    category = "Programming",
+                    authorId = "admin",
+                    isPublished = true
+                )
             )
 
-            courses.forEach { course ->
-                val created = courseRepo.create(course)
-                val lessons = listOf(
-                    Lesson(courseId = created.id, title = "Введение", order = 1, type = LessonType.TEXT, durationMinutes = 10, markdownContent = "# Добро пожаловать!\nЭто вводный урок."),
-                    Lesson(courseId = created.id, title = "Основные понятия", order = 2, type = LessonType.VIDEO, durationMinutes = 15, videoUrl = "http://192.168.1.13:8080/uploads/sample.mp4"),
-                    Lesson(courseId = created.id, title = "Практика", order = 3, type = LessonType.QUIZ, durationMinutes = 20, quizId = "quiz_1")
+            val extraCourses = listOf(
+                "Продвинутый Backend на Kotlin", "Дизайн мобильных интерфейсов", "Машинное обучение: Введение",
+                "SQL и базы данных", "Управление IT-проектами", "Тестирование ПО (QA)",
+                "Разработка игр на Unity", "Кибербезопасность для всех", "Анализ данных с Pandas",
+                "Swift: Разработка под iOS", "React.js: Современный Frontend", "Docker и Kubernetes"
+            ).map { title ->
+                Course(
+                    title = title,
+                    description = "Краткое описание курса по теме $title. Изучите основы и продвинутые техники.",
+                    category = when {
+                        title.contains("Android") || title.contains("iOS") || title.contains("мобильных") -> "Android"
+                        title.contains("Backend") -> "Backend"
+                        title.contains("SQL") -> "SQL"
+                        title.contains("Frontend") || title.contains("React") -> "Frontend"
+                        title.contains("Дизайн") -> "Design"
+                        else -> "Programming"
+                    },
+                    authorId = "admin",
+                    isPublished = true
                 )
-                lessons.forEach { lessonRepo.create(it) }
+            }
+
+            (mainCourses + extraCourses).forEach { course ->
+                val created = courseRepo.create(course)
                 
+                val lessons = when (course.title) {
+                    "Веб-разработка для начинающих" -> {
+                        listOf(
+                            Lesson(
+                                courseId = created.id, 
+                                title = "Введение в HTML", 
+                                order = 1, 
+                                type = LessonType.TEXT, 
+                                durationMinutes = 10, 
+                                markdownContent = """
+                                    # Что такое HTML?
+                                    
+                                    HTML (HyperText Markup Language) — это стандартный язык разметки для документов, предназначенных для отображения в веб-браузере.
+                                    
+                                    ### Основные теги:
+                                    - `<html>` - корень документа
+                                    - `<head>` - метаданные
+                                    - `<body>` - видимая часть страницы
+                                    
+                                    Попробуйте создать свой первый файл `index.html`!
+                                """.trimIndent()
+                            ),
+                            Lesson(
+                                courseId = created.id, 
+                                title = "Стилизация с помощью CSS", 
+                                order = 2, 
+                                type = LessonType.VIDEO, 
+                                durationMinutes = 15, 
+                                videoUrl = "uploads/sample.mp4"
+                            ),
+                            Lesson(
+                                courseId = created.id, 
+                                title = "Основы JavaScript", 
+                                order = 3, 
+                                type = LessonType.TEXT, 
+                                durationMinutes = 20, 
+                                markdownContent = """
+                                    # JavaScript: Делаем страницы живыми
+                                    
+                                    JavaScript — это мультипарадигменный язык программирования. С его помощью можно обрабатывать события, изменять HTML и CSS на лету.
+                                    
+                                    ```javascript
+                                    console.log('Hello, Studli!');
+                                    ```
+                                    
+                                    Изучайте переменные, циклы и функции!
+                                """.trimIndent()
+                            ),
+                            Lesson(
+                                courseId = created.id, 
+                                title = "Работа с DOM", 
+                                order = 4, 
+                                type = LessonType.VIDEO, 
+                                durationMinutes = 12, 
+                                videoUrl = "https://www.youtube.com/watch?v=tY8vj6aI7zQ"
+                            )
+                        )
+                    }
+                    "Android Jetpack Compose" -> {
+                        listOf(
+                            Lesson(
+                                courseId = created.id,
+                                title = "Введение в декларативный UI",
+                                order = 1,
+                                type = LessonType.TEXT,
+                                durationMinutes = 15,
+                                markdownContent = """
+                                    # Что такое Jetpack Compose?
+                                    
+                                    Jetpack Compose — это современный инструментарий для создания нативного пользовательского интерфейса для Android. Он упрощает и ускоряет разработку UI на Android с помощью декларативного подхода.
+                                    
+                                    ### Почему Compose?
+                                    - **Меньше кода**: Описывайте только состояние вашего UI, и Compose позаботится об остальном.
+                                    - **Декларативность**: UI автоматически обновляется при изменении состояния.
+                                    - **Совместимость с Kotlin**: Полная поддержка всех возможностей языка Kotlin.
+                                    
+                                    В традиционном подходе (XML) мы работали императивно: `textView.setText("Hello")`. В Compose мы просто говорим: `Text("Hello")`.
+                                """.trimIndent()
+                            ),
+                            Lesson(
+                                courseId = created.id,
+                                title = "Создание первого экрана",
+                                order = 2,
+                                type = LessonType.VIDEO,
+                                durationMinutes = 25,
+                                videoUrl = "https://www.youtube.com/watch?v=6rL4S85-2U0"
+                            ),
+                            Lesson(
+                                courseId = created.id,
+                                title = "Состояние (State) в Compose",
+                                order = 3,
+                                type = LessonType.TEXT,
+                                durationMinutes = 20,
+                                markdownContent = """
+                                    # Управление состоянием
+                                    
+                                    Состояние в приложении — это любое значение, которое может меняться со временем. В Compose состояние определяет, что отображается на экране.
+                                    
+                                    ### Ключевые функции:
+                                    - `remember`: Сохраняет значение в памяти во время рекомпозиции.
+                                    - `mutableStateOf`: Создает наблюдаемое состояние, изменение которого триггерит обновление UI.
+                                    
+                                    Пример:
+                                    ```kotlin
+                                    val count = remember { mutableStateOf(0) }
+                                    Button(onClick = { count.value++ }) {
+                                        Text("Нажато ${'$'}{count.value} раз")
+                                    }
+                                    ```
+                                    
+                                    Это позволяет создавать динамические и интерактивные интерфейсы без лишнего бойлерплейта.
+                                """.trimIndent()
+                            ),
+                            Lesson(
+                                courseId = created.id,
+                                title = "Списки и LazyColumn",
+                                order = 4,
+                                type = LessonType.VIDEO,
+                                durationMinutes = 18,
+                                videoUrl = "https://www.youtube.com/watch?v=1ANt65oeLpE"
+                            ),
+                            Lesson(
+                                courseId = created.id,
+                                title = "Навигация и архитектура",
+                                order = 5,
+                                type = LessonType.TEXT,
+                                durationMinutes = 22,
+                                markdownContent = """
+                                    # Навигация в Compose
+                                    
+                                    Для перемещения между экранами используется библиотека `navigation-compose`. Основным компонентом является `NavHost`.
+                                    
+                                    ### Основные шаги:
+                                    1. Создать `NavController`.
+                                    2. Описать граф навигации с помощью `NavHost`.
+                                    3. Использовать `navController.navigate("route")` для перехода.
+                                    
+                                    Compose также отлично работает с **ViewModel** и **Clean Architecture**, позволяя отделять бизнес-логику от представления.
+                                """.trimIndent()
+                            ),
+                            Lesson(
+                                courseId = created.id,
+                                title = "Продвинутая анимация",
+                                order = 6,
+                                type = LessonType.VIDEO,
+                                durationMinutes = 20,
+                                videoUrl = "https://www.youtube.com/watch?v=MInX9W67jO4"
+                            )
+                        )
+                    }
+                    else -> {
+                        listOf(
+                            Lesson(
+                                courseId = created.id, 
+                                title = "Вводный урок", 
+                                order = 1, 
+                                type = LessonType.TEXT, 
+                                durationMinutes = 10, 
+                                markdownContent = "Добро пожаловать в курс \"${course.title}\"! В этом уроке мы обсудим план обучения и основные цели."
+                            ),
+                            Lesson(
+                                courseId = created.id, 
+                                title = "Обзор инструментов", 
+                                order = 2, 
+                                type = LessonType.VIDEO, 
+                                durationMinutes = 15, 
+                                videoUrl = "http://192.168.1.13:8080/uploads/sample.mp4"
+                            )
+                        )
+                    }
+                }
+
+                lessons.forEach { lessonRepo.create(it) }
                 courseRepo.update(created.copy(lessons = lessons.map { it.id }))
             }
-            call.respond(HttpStatusCode.Created, mapOf("message" to "Database seeded successfully. Make sure to put a 'sample.mp4' file in the 'uploads' folder!"))
+            call.respond(HttpStatusCode.Created, mapOf("message" to "Database seeded successfully with variety of courses and YouTube links!"))
         }
 
         route("/api/v1/courses") {
@@ -128,30 +338,30 @@ fun Application.configureRouting() {
                 }
 
                 post("/{id}/unenroll") {
-val p = call.principal<FirebasePrincipal>()!!
-val i = call.parameters["id"]!!
-progressRepo.deleteForUserAndCourse(p.uid, i)
-call.respond(HttpStatusCode.OK, mapOf("status" to "unenrolled"))
-}
-post("/{id}/enroll") {
-    val principal = call.principal<FirebasePrincipal>()!!
-    val id = call.parameters["id"]
-        ?: throw IllegalArgumentException("Missing course id")
-    val course = courseRepo.getById(id)
-        ?: throw NoSuchElementException("Course $id not found")
+                    val p = call.principal<FirebasePrincipal>()!!
+                    val i = call.parameters["id"]!!
+                    progressRepo.deleteForUserAndCourse(p.uid, i)
+                    call.respond(HttpStatusCode.OK, mapOf("status" to "unenrolled"))
+                }
+                post("/{id}/enroll") {
+                    val principal = call.principal<FirebasePrincipal>()!!
+                    val id = call.parameters["id"]
+                        ?: throw IllegalArgumentException("Missing course id")
+                    val course = courseRepo.getById(id)
+                        ?: throw NoSuchElementException("Course $id not found")
 
-    course.lessons.forEach { lessonId ->
-        progressRepo.upsert(
-            LessonProgress(
-                userId = principal.uid,
-                courseId = id,
-                lessonId = lessonId,
-                completed = false
-            )
-        )
-    }
-    call.respond(HttpStatusCode.OK, mapOf("status" to "enrolled", "courseId" to id))
-}
+                    course.lessons.forEach { lessonId ->
+                        progressRepo.upsert(
+                            LessonProgress(
+                                userId = principal.uid,
+                                courseId = id,
+                                lessonId = lessonId,
+                                completed = false
+                            )
+                        )
+                    }
+                    call.respond(HttpStatusCode.OK, mapOf("status" to "enrolled", "courseId" to id))
+                }
 
                 post {
                     val principal = call.principal<FirebasePrincipal>()!!
@@ -292,7 +502,3 @@ post("/{id}/enroll") {
         }
     }
 }
-
-
-
-
